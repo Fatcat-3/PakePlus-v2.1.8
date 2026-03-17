@@ -1,11 +1,718 @@
 <!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>PakePlus</title>
-    </head>
-    <body>
-        Hello World
-    </body>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>课前测试点名系统</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1 class="page-title">课前测试点名系统</h1>
+        <p class="page-subtitle">选择班级开始点名</p>
+    </header>
+    
+    <div class="container">
+        <!-- 班级选择页面 -->
+        <div id="class-selection-page">
+            <div class="loading" id="classes-loading">正在加载班级信息</div>
+            <div class="classes-container" id="classes-container"></div>
+            <div class="import-section">
+                <button class="import-button" id="import-button">导入学生名单</button>
+            </div>
+        </div>
+        
+        <!-- 导入模态窗口 -->
+        <div id="import-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">导入学生名单</h3>
+                    <button class="close-button" id="close-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>请选择包含学生姓名的TXT文件，每行一个姓名</p>
+                    <div class="file-input-container">
+                        <label for="file-input" class="file-input-label">
+                            <div class="file-input-icon">📄</div>
+                            <p class="file-input-text">点击或拖拽文件到此处</p>
+                            <input type="file" id="file-input" class="file-input" accept=".txt">
+                        </label>
+                        <div id="file-info" class="file-info" style="display: none;"></div>
+                    </div>
+                </div>
+                <div class="import-actions">
+                    <button class="cancel-btn" id="cancel-import">取消</button>
+                    <button class="confirm-btn" id="confirm-import" disabled>导入</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 点名页面 -->
+        <div id="calling-page" style="display: none;">
+            <button class="back-button" onclick="goBack()">←</button>
+            <h2 class="current-class" id="current-class-name"></h2>
+            <div class="content-container">
+                <div class="name-display" id="name-display"></div>
+            </div>
+            <div class="question-section">
+                <div class="chapter-selector">
+                    <label for="chapter-select">选择章节：</label>
+                    <select id="chapter-select" class="chapter-dropdown">
+                        <option value="1">第一章</option>
+                        <option value="2">第二章</option>
+                        <option value="3" selected>第三章</option>
+                        <option value="4">第四章</option>
+                        <option value="5">第五章</option>
+                    </select>
+                </div>
+                <button class="start-question-btn" id="start-question-btn">开始答题</button>
+                <div class="question-image-container">
+                    <div class="image-loading" id="image-loader" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>加载题目中...</p>
+                    </div>
+                    <img class="question-image" id="question-image" style="display: none;" alt="题目图片">
+                    <div class="image-error" id="image-error" style="display: none;">
+                        <p>图片加载失败，请重试</p>
+                        <button class="retry-btn" id="retry-btn">重新加载</button>
+                    </div>
+                </div>
+            </div>
+            <p class="instruction">等待5秒或按下任意键停止</p>
+        </div>
+    </div>
+    
+    <script src="supabase-config.js"></script>
+    <script src="supabase.js"></script>
+    <script>
+        // 使用全局配置
+        // 使用全局配置
+        const CONFIG = {
+            SUPABASE_URL: window.SUPABASE_CONFIG.URL,
+            SUPABASE_KEY: window.SUPABASE_CONFIG.KEY
+        };
+        
+        // 全局状态管理
+        const AppState = {
+            supabase: null,
+            classes: [],
+            currentClassId: null,
+            currentStudents: [],
+            isCalling: false,
+            callingInterval: null,
+            timer: null,
+            lastClickTime: 0, // 记录最后一次点击的时间戳
+            // 图片相关状态
+            chapterImages: {
+                '1': [
+                    '1/第一章记忆清单_01.png',
+                    '1/第一章记忆清单_02.png',
+                    '1/第一章记忆清单_03.png',
+                    '1/第一章记忆清单_04.png',
+                    '1/第一章记忆清单_05.png',
+                    '1/第一章记忆清单_06.png',
+                    '1/第一章记忆清单_07.png',
+                    '1/第一章记忆清单_08.png',
+                    '1/第一章记忆清单_09.png',
+                    '1/第一章记忆清单_10.png',
+                    '1/第一章记忆清单_11.png',
+                    '1/第一章记忆清单_12.png',
+                    '1/第一章记忆清单_13.png',
+                    '1/第一章记忆清单_14.png'
+                ],
+                '2': [
+                    '2/第二章记忆清单_01.png',
+                    '2/第二章记忆清单_02.png',
+                    '2/第二章记忆清单_03.png',
+                    '2/第二章记忆清单_04.png',
+                    '2/第二章记忆清单_05.png',
+                    '2/第二章记忆清单_06.png',
+                    '2/第二章记忆清单_07.png',
+                    '2/第二章记忆清单_08.png',
+                    '2/第二章记忆清单_09.png',
+                    '2/第二章记忆清单_10.png',
+                    '2/第二章记忆清单_11.png',
+                    '2/第二章记忆清单_12.png',
+                    '2/第二章记忆清单_13.png'
+                ],
+                '3': [
+                    '3/第三章记忆清单_01.png',
+                    '3/第三章记忆清单_02.png',
+                    '3/第三章记忆清单_03.png',
+                    '3/第三章记忆清单_04.png',
+                    '3/第三章记忆清单_05.png',
+                    '3/第三章记忆清单_06.png',
+                    '3/第三章记忆清单_07.png',
+                    '3/第三章记忆清单_08.png',
+                    '3/第三章记忆清单_09.png',
+                    '3/第三章记忆清单_10.png'
+                ],
+                '4': [
+                    '4/第四章记忆清单_01.png',
+                    '4/第四章记忆清单_02.png',
+                    '4/第四章记忆清单_03.png',
+                    '4/第四章记忆清单_04.png',
+                    '4/第四章记忆清单_05.png',
+                    '4/第四章记忆清单_06.png',
+                    '4/第四章记忆清单_07.png',
+                    '4/第四章记忆清单_08.png',
+                    '4/第四章记忆清单_09.png',
+                    '4/第四章记忆清单_10.png',
+                    '4/第四章记忆清单_11.png',
+                    '4/第四章记忆清单_12.png',
+                    '4/第四章记忆清单_13.png',
+                    '4/第四章记忆清单_14.png'
+                ],
+                '5': [
+                    '5/必修二第五章记忆清单_01.png',
+                    '5/必修二第五章记忆清单_02.png',
+                    '5/必修二第五章记忆清单_03.png',
+                    '5/必修二第五章记忆清单_04.png',
+                    '5/必修二第五章记忆清单_05.png',
+                    '5/必修二第五章记忆清单_06.png',
+                    '5/必修二第五章记忆清单_07.png',
+                    '5/必修二第五章记忆清单_08.png',
+                    '5/必修二第五章记忆清单_09.png',
+                    '5/必修二第五章记忆清单_10.png',
+                    '5/必修二第五章记忆清单_11.png',
+                    '5/必修二第五章记忆清单_12.png',
+                    '5/必修二第五章记忆清单_13.png',
+                    '5/必修二第五章记忆清单_14.png',
+                    '5/必修二第五章记忆清单_15.png'
+                ]
+            },
+            lastImageIndex: -1, // 记录上次显示的图片索引，避免连续重复
+            // 图片使用记录，用于实现均匀选择
+            imageUsage: {} // 存储每个章节的已使用图片索引
+        };
+        
+        // 全局状态管理
+        let importedStudents = [];
+        let selectedFile = null;
+        
+        // 工具函数
+        const Utils = {
+            showLoading() {
+                const loader = document.getElementById('classes-loading');
+                if (loader) {
+                    loader.innerHTML = '<div class="spinner"></div><p>加载班级数据中...</p>';
+                    loader.style.display = 'flex';
+                }
+            },
+            
+            hideLoading() {
+                const loader = document.getElementById('classes-loading');
+                if (loader) loader.style.display = 'none';
+            },
+            
+            showError(message) {
+                console.error('错误:', message);
+                const container = document.getElementById('classes-container');
+                const loading = document.getElementById('classes-loading');
+                if (loading) loading.style.display = 'none';
+                
+                if (container) {
+                    container.innerHTML = `
+                        <div style="text-align:center;padding:4rem 0;color:#6b7280">
+                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'%3E%3C/path%3E%3C/svg%3E" alt="错误" style="width:48px; height:48px; margin-bottom:1rem;">
+                            <p style="font-size:1.25rem">数据加载失败</p>
+                            <p style="margin-top:0.5rem">${message}</p>
+                        </div>
+                    `;
+                }
+            },
+            
+            showEmptyState(message) {
+                const container = document.getElementById('classes-container');
+                const loading = document.getElementById('classes-loading');
+                if (loading) loading.style.display = 'none';
+                
+                if (container) {
+                    container.innerHTML = `
+                        <div style="text-align:center;padding:4rem 0;color:#6b7280">
+                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'%3E%3C/path%3E%3C/svg%3E" alt="空状态" style="width:48px; height:48px; margin-bottom:1rem;">
+                            <p style="font-size:1.25rem">${message}</p>
+                            <p style="margin-top:0.5rem">请联系管理员添加班级</p>
+                        </div>
+                    `;
+                }
+            },
+            
+            // 解析TXT文件内容为学生姓名数组
+            parseStudentFile(fileContent) {
+                // 按行分割，去除空白行和多余空格
+                return fileContent
+                    .split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0);
+            },
+            
+            // 初始化导入功能
+            initImportFunctionality() {
+                const importButton = document.getElementById('import-button');
+                const modal = document.getElementById('import-modal');
+                const closeModal = document.getElementById('close-modal');
+                const cancelImport = document.getElementById('cancel-import');
+                const confirmImport = document.getElementById('confirm-import');
+                const fileInput = document.getElementById('file-input');
+                const fileInfo = document.getElementById('file-info');
+                
+                // 打开模态窗口
+                importButton.addEventListener('click', () => {
+                    modal.style.display = 'block';
+                    // 重置状态
+                    fileInput.value = '';
+                    fileInfo.style.display = 'none';
+                    confirmImport.disabled = true;
+                    selectedFile = null;
+                    importedStudents = [];
+                });
+                
+                // 关闭模态窗口
+                const closeModalHandler = () => {
+                    modal.style.display = 'none';
+                };
+                
+                closeModal.addEventListener('click', closeModalHandler);
+                cancelImport.addEventListener('click', closeModalHandler);
+                
+                // 点击模态窗口外部关闭
+                window.addEventListener('click', (event) => {
+                    if (event.target === modal) {
+                        closeModalHandler();
+                    }
+                });
+                
+                // 文件选择处理
+                fileInput.addEventListener('change', (event) => {
+                    const file = event.target.files[0];
+                    if (file) {
+                        selectedFile = file;
+                        fileInfo.textContent = `已选择文件: ${file.name}`;
+                        fileInfo.style.display = 'block';
+                        confirmImport.disabled = false;
+                        
+                        // 读取文件内容
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                const content = e.target.result;
+                                importedStudents = Utils.parseStudentFile(content);
+                                fileInfo.textContent = `已选择文件: ${file.name} (${importedStudents.length} 名学生)`;
+                            } catch (error) {
+                                console.error('文件解析错误:', error);
+                                fileInfo.textContent = '文件解析错误，请检查文件格式';
+                                fileInfo.style.backgroundColor = '#fff5f5';
+                                fileInfo.style.color = '#c53030';
+                                confirmImport.disabled = true;
+                            }
+                        };
+                        reader.readAsText(file);
+                    }
+                });
+                
+                // 确认导入
+                confirmImport.addEventListener('click', () => {
+                    if (importedStudents.length > 0) {
+                        // 使用导入的学生数据进入点名页面，班级显示为"X"
+                        document.getElementById('current-class-name').textContent = 'X';
+                        document.getElementById('class-selection-page').style.display = 'none';
+                        document.getElementById('calling-page').style.display = 'block';
+                        
+                        // 设置学生数据
+                        AppState.currentStudents = importedStudents.map(name => ({ name }));
+                        
+                        // 开始点名
+                        startCalling();
+                        
+                        // 关闭模态窗口
+                        closeModalHandler();
+                    }
+                });
+                
+                // 添加拖拽功能
+                const fileInputLabel = document.querySelector('.file-input-label');
+                
+                fileInputLabel.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    fileInputLabel.style.borderColor = '#667eea';
+                    fileInputLabel.style.backgroundColor = '#f3f4ff';
+                });
+                
+                fileInputLabel.addEventListener('dragleave', () => {
+                    fileInputLabel.style.borderColor = '';
+                    fileInputLabel.style.backgroundColor = '';
+                });
+                
+                fileInputLabel.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    fileInputLabel.style.borderColor = '';
+                    fileInputLabel.style.backgroundColor = '';
+                    
+                    if (e.dataTransfer.files.length) {
+                        const file = e.dataTransfer.files[0];
+                        if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+                            fileInput.files = e.dataTransfer.files;
+                            // 触发change事件
+                            const event = new Event('change');
+                            fileInput.dispatchEvent(event);
+                        } else {
+                            fileInfo.textContent = '请选择TXT文件';
+                            fileInfo.style.display = 'block';
+                            fileInfo.style.backgroundColor = '#fff5f5';
+                            fileInfo.style.color = '#c53030';
+                        }
+                    }
+                });
+            },
+            
+            // 随机选择不重复的图片 - 改进版：更均匀的选择算法
+            getRandomImageIndex(images, lastIndex, chapter) {
+                if (images.length <= 1) return 0;
+                
+                // 初始化该章节的图片使用记录
+                if (!AppState.imageUsage[chapter]) {
+                    // 使用Fisher-Yates洗牌算法生成随机顺序
+                    AppState.imageUsage[chapter] = [...Array(images.length).keys()];
+                    for (let i = AppState.imageUsage[chapter].length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [AppState.imageUsage[chapter][i], AppState.imageUsage[chapter][j]] = [AppState.imageUsage[chapter][j], AppState.imageUsage[chapter][i]];
+                    }
+                }
+                
+                let newIndex;
+                
+                // 如果只有两个图片，确保不连续重复
+                if (images.length === 2) {
+                    newIndex = lastIndex === 0 ? 1 : 0;
+                } else {
+                    // 从洗牌后的数组中取第一个元素
+                    newIndex = AppState.imageUsage[chapter].shift();
+                    
+                    // 如果数组为空，重新洗牌
+                    if (AppState.imageUsage[chapter].length === 0) {
+                        AppState.imageUsage[chapter] = [...Array(images.length).keys()];
+                        for (let i = AppState.imageUsage[chapter].length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [AppState.imageUsage[chapter][i], AppState.imageUsage[chapter][j]] = [AppState.imageUsage[chapter][j], AppState.imageUsage[chapter][i]];
+                        }
+                    }
+                    
+                    // 确保不连续重复
+                    if (newIndex === lastIndex) {
+                        // 将当前元素放回数组末尾，重新洗牌
+                        AppState.imageUsage[chapter].push(newIndex);
+                        for (let i = AppState.imageUsage[chapter].length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [AppState.imageUsage[chapter][i], AppState.imageUsage[chapter][j]] = [AppState.imageUsage[chapter][j], AppState.imageUsage[chapter][i]];
+                        }
+                        newIndex = AppState.imageUsage[chapter].shift();
+                    }
+                }
+                
+                return newIndex;
+            }
+        };
+        
+        // 初始化答题功能
+        function initQuestionFeature() {
+            const startQuestionBtn = document.getElementById('start-question-btn');
+            const chapterSelect = document.getElementById('chapter-select');
+            
+            // 从本地存储中读取上次选择的章节
+            const lastSelectedChapter = localStorage.getItem('lastSelectedChapter');
+            if (lastSelectedChapter) {
+                chapterSelect.value = lastSelectedChapter;
+            }
+            
+            // 章节选择变化事件监听器
+            chapterSelect.addEventListener('change', () => {
+                // 将选择的章节存储到本地存储
+                localStorage.setItem('lastSelectedChapter', chapterSelect.value);
+            });
+            
+            // 点击"开始答题"按钮事件
+            startQuestionBtn.addEventListener('click', () => {
+                // 获取选择的章节
+                const selectedChapter = chapterSelect.value;
+                const chapterImages = AppState.chapterImages[selectedChapter];
+                
+                // 检查该章节是否有图片
+                if (!chapterImages || chapterImages.length === 0) {
+                    alert(`第${selectedChapter}章暂无图片，请选择其他章节`);
+                    return;
+                }
+                
+                // 获取随机图片索引
+                const randomIndex = Utils.getRandomImageIndex(chapterImages, AppState.lastImageIndex, selectedChapter);
+                const imagePath = chapterImages[randomIndex];
+                
+                // 更新最后使用的图片索引
+                AppState.lastImageIndex = randomIndex;
+                
+                // 跳转到答题页面
+                window.location.href = `question.html?image=${encodeURIComponent(imagePath)}`;
+            });
+        }
+        
+        // 移除了模拟数据，现在仅使用真实的Supabase数据
+        
+        // Supabase 管理
+        const SupabaseManager = {
+            async initialize() {
+                try {
+                    if (!window.supabase && !window.createClient) {
+                        throw new Error('Supabase客户端未加载');
+                    }
+                    
+                    const createClientFn = window.createClient || window.supabase?.createClient;
+                    if (!createClientFn) {
+                        throw new Error('未找到Supabase createClient方法');
+                    }
+                    
+                    AppState.supabase = createClientFn(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+                    console.log('Supabase客户端初始化完成');
+                    return AppState.supabase;
+                } catch (error) {
+                    console.error('Supabase初始化错误:', error);
+                    Utils.showError('数据库连接失败，请检查配置');
+                    throw error; // 重新抛出错误以便上层处理
+                }
+            },
+            
+            async loadClassesFromDatabase() {
+                if (!AppState.supabase) {
+                    Utils.showError('数据库连接未初始化');
+                    return;
+                }
+                
+                try {
+                    console.log('开始加载班级数据...');
+                    Utils.showLoading();
+                    
+                    const { data, error } = await AppState.supabase
+                        .from('classes')
+                        .select('class_name')
+                        .order('class_name');
+                    
+                    Utils.hideLoading();
+                    
+                    if (error) {
+                        console.error('从数据库加载班级失败:', error);
+                        Utils.hideLoading();
+                        Utils.showError(error.message || '未知错误');
+                        Utils.showEmptyState('无法连接到数据库，请检查网络或配置');
+                        return;
+                    }
+                    
+                    if (!data || data.length === 0) {
+                        Utils.hideLoading();
+                        Utils.showEmptyState('暂无班级数据');
+                        return;
+                    }
+                    
+                    // 处理班级数据并渲染 - 只使用class_name字段
+                    const classNames = data.map(item => item.class_name);
+                    renderClassCards(classNames);
+                } catch (err) {
+                    console.error('加载班级数据时发生错误:', err);
+                    Utils.hideLoading();
+                    Utils.showError(err.message || '未知错误');
+                    Utils.showEmptyState('加载数据失败，请稍后重试');
+                }
+            }
+        };
+        
+        // 渲染班级卡片
+        function renderClassCards(classes) {
+            const container = document.getElementById('classes-container');
+            if (!container) return;
+            
+            if (!classes || classes.length === 0) {
+                Utils.showEmptyState('暂无班级数据');
+                return;
+            }
+            
+            container.innerHTML = classes.map(className => `
+                <div class="class-card" style="background:white;border-radius:1rem;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);padding:2rem;display:flex;flex-direction:column;align-items:center;cursor:pointer;transition:all 0.3s ease" data-class-name="${className}">
+                    <div style="width:6rem;height:6rem;border-radius:50%;background:rgba(79,70,229,0.1);display:flex;align-items:center;justify-content:center;margin-bottom:1rem">
+                        <span style="font-size:2.25rem;font-weight:700;color:#4F46E5">${className.slice(-2) || '班'}</span>
+                    </div>
+                    <div style="font-size:1.25rem;font-weight:600;color:#374151;margin-bottom:0.5rem">${className}</div>
+                    <div style="color:#6b7280">点击开始点名</div>
+                </div>
+            `).join('');
+            
+            // 添加点击事件
+            document.querySelectorAll('.class-card').forEach(card => {
+                card.addEventListener('click', function() {
+                    const className = this.getAttribute('data-class-name');
+                    selectClass(className);
+                });
+            });
+        }
+        
+        // 初始化应用
+        async function initializeApp() {
+            try {
+                console.log('应用初始化开始...');
+                // 初始化导入功能
+                Utils.initImportFunctionality();
+                
+                // 初始化答题功能
+                initQuestionFeature();
+                
+                try {
+                    await SupabaseManager.initialize();
+                    await SupabaseManager.loadClassesFromDatabase();
+                } catch (dbError) {
+                    console.error('数据库初始化失败:', dbError);
+                    // 即使数据库失败，应用仍可通过导入功能使用
+                    Utils.showError('数据库连接失败，您可以使用导入功能');
+                }
+            } catch (error) {
+                console.error('应用初始化失败:', error);
+                Utils.showError('应用初始化失败，请刷新页面重试');
+            }
+        }
+        
+        // 页面加载完成后初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeApp);
+        } else {
+            initializeApp();
+        }
+        
+        // 选择班级
+        async function selectClass(className) {
+            document.getElementById('current-class-name').textContent = className;
+            
+            // 显示点名页面
+            document.getElementById('class-selection-page').style.display = 'none';
+            document.getElementById('calling-page').style.display = 'block';
+            
+            try {
+                // 使用班级名称获取学生数据
+                const { data } = await AppState.supabase
+                    .from('students')
+                    .select('name')
+                    .eq('class_name', className);
+                
+                AppState.currentStudents = data || [];
+                
+                if (AppState.currentStudents.length > 0) {
+                    // 开始点名
+                    startCalling();
+                } else {
+                    document.getElementById('name-display').textContent = '暂无学生数据';
+                }
+            } catch (error) {
+                console.error('加载学生数据失败:', error);
+                document.getElementById('name-display').textContent = '加载失败';
+            }
+        }
+        
+        // 开始点名
+        function startCalling() {
+            AppState.isCalling = true;
+            const nameDisplay = document.getElementById('name-display');
+            nameDisplay.classList.remove('selected');
+            
+            // 清除之前的定时器
+            if (AppState.callingInterval) {
+                clearInterval(AppState.callingInterval);
+            }
+            if (AppState.timer) {
+                clearTimeout(AppState.timer);
+            }
+            
+            // 添加点击事件监听器 - 点击停止姓名滚动或重新开始
+            nameDisplay.onclick = function() {
+                const now = Date.now();
+                // 检查两次点击之间是否至少间隔1秒
+                if (AppState.isCalling && (now - AppState.lastClickTime >= 1000)) {
+                    AppState.lastClickTime = now;
+                    stopNameCalling();
+                } else if (!AppState.isCalling && (now - AppState.lastClickTime >= 1000)) {
+                    AppState.lastClickTime = now;
+                    startCalling();
+                }
+            };
+            
+            // 快速滚动显示学生姓名
+            AppState.callingInterval = setInterval(() => {
+                if (AppState.currentStudents.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * AppState.currentStudents.length);
+                    nameDisplay.textContent = typeof AppState.currentStudents[randomIndex] === 'string' 
+                        ? AppState.currentStudents[randomIndex] 
+                        : AppState.currentStudents[randomIndex].name;
+                }
+            }, 100);
+            
+            // 5秒后自动停止姓名滚动
+            AppState.timer = setTimeout(() => {
+                stopNameCalling();
+            }, 5000);
+        }
+        
+        // 停止姓名滚动
+        function stopNameCalling() {
+            if (!AppState.isCalling) return;
+            
+            AppState.isCalling = false;
+            clearInterval(AppState.callingInterval);
+            clearTimeout(AppState.timer);
+            
+            const nameDisplay = document.getElementById('name-display');
+            nameDisplay.classList.add('selected');
+            
+            // 添加动画效果
+            nameDisplay.style.animation = 'pulse 0.6s ease-in-out';
+            setTimeout(() => {
+                nameDisplay.style.animation = '';
+            }, 600);
+        }
+        
+        // 停止点名（兼容旧代码）
+        function stopCalling() {
+            stopNameCalling();
+        }
+        
+        // 返回班级选择页面
+        function goBack() {
+            AppState.isCalling = false;
+            if (AppState.callingInterval) {
+                clearInterval(AppState.callingInterval);
+            }
+            if (AppState.timer) {
+                clearTimeout(AppState.timer);
+            }
+            
+            // 移除点击事件监听器
+            const nameDisplay = document.getElementById('name-display');
+            nameDisplay.onclick = null;
+            
+            document.getElementById('calling-page').style.display = 'none';
+            document.getElementById('class-selection-page').style.display = 'block';
+        }
+        
+        // 键盘事件监听
+        document.addEventListener('keydown', (e) => {
+            const now = Date.now();
+            if (AppState.isCalling) {
+                // 如果姓名还在滚动，停止姓名滚动
+                if (now - AppState.lastClickTime >= 1000) {
+                    AppState.lastClickTime = now;
+                    stopNameCalling();
+                }
+            } else if (document.getElementById('calling-page').style.display !== 'none') {
+                // 如果姓名已停止滚动，按任意键重新开始
+                if (now - AppState.lastClickTime >= 1000) {
+                    AppState.lastClickTime = now;
+                    startCalling();
+                }
+            }
+        });
+    </script>
+</body>
 </html>
